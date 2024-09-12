@@ -7,6 +7,7 @@ import VerificationCodeModel from "../models/verificationCode.model";
 import appAssert from "../utils/appAssert";
 import { oneYearFromNow } from "../utils/date";
 import jwt from "jsonwebtoken";
+import { refreshTokenSignOptions, signToken } from "../utils/jwt";
 
 export type CreateAccountParams = {
   email: string;
@@ -28,39 +29,30 @@ export const createAccount = async (data: CreateAccountParams) => {
     password: data.password,
   });
 
+  const userId = user._id;
+
   const verificationCode = await VerificationCodeModel.create({
-    userId: user._id,
+    userId,
     type: VerificationCodeType.EmailVerification,
     expiresAt: oneYearFromNow(),
   });
 
   // create session
   const session = await SessionModel.create({
-    userId: user._id,
+    userId,
     userAgent: data.userAgent,
   });
 
-  const refreshToken = jwt.sign(
+  const refreshToken = signToken(
     {
       sessionId: session._id,
     },
-    JWT_REFRESH_SECRET,
-    {
-      audience: ["user"],
-      expiresIn: "30d",
-    }
+    refreshTokenSignOptions
   );
-  const accessToken = jwt.sign(
-    {
-      userId: user._id,
-      sessionId: session._id,
-    },
-    JWT_SECRET,
-    {
-      audience: ["user"],
-      expiresIn: "15m",
-    }
-  );
+  const accessToken = signToken({
+    userId,
+    sessionId: session._id,
+  });
 
   return {
     user: user.omitPassword(),
@@ -97,21 +89,16 @@ export const loginUser = async ({
   const sessionInfo = {
     sessionId: session._id,
   };
-  const refreshToken = jwt.sign(sessionInfo, JWT_REFRESH_SECRET, {
-    audience: ["user"],
-    expiresIn: "30d",
+  // const refreshToken = jwt.sign(sessionInfo, JWT_REFRESH_SECRET, {
+  //   audience: ["user"],
+  //   expiresIn: "30d",
+  // });
+  const refreshToken = signToken(sessionInfo, refreshTokenSignOptions);
+
+  const accessToken = signToken({
+    ...sessionInfo,
+    userId: user._id,
   });
-  const accessToken = jwt.sign(
-    {
-      ...sessionInfo,
-      userId: user._id,
-    },
-    JWT_SECRET,
-    {
-      audience: ["user"],
-      expiresIn: "15m",
-    }
-  );
   return {
     user: user.omitPassword(),
     accessToken,
